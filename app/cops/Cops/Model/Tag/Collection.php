@@ -16,18 +16,33 @@ use Cops\Model\CollectionAbstract;
  * Tag collection model
  * @author Mathieu Duplouy <mathieu.duplouy@gmail.com>
  */
-class Collection extends CollectionAbstract implements \IteratorAggregate, \Countable
+class Collection extends CollectionAbstract
 {
     /**
      * Load all tags along with book count
      *
      * @return Collection
      */
-    public function getAll()
+    public function getAllWithBookCount()
     {
         $resource = $this->getResource();
 
-        foreach ($resource->loadAll() as $result) {
+        foreach ($resource->loadAllWithBookCount() as $result) {
+            $this->add($resource->setDataFromStatement($result));
+        }
+        return $this;
+    }
+
+    /**
+     * Load all tag names
+     *
+     * @return Collection
+     */
+    public function getAllNames()
+    {
+        $resource = $this->getResource();
+
+        foreach ($resource->loadAllNames() as $result) {
             $this->add($resource->setDataFromStatement($result));
         }
         return $this;

@@ -9,20 +9,27 @@
  */
 namespace Cops\Model;
 
+use Cops\Model\EntityInterface;
 use Silex\Application as BaseApplication;
 
 /**
- * Common class model
+ * Entity abstract class model
  *
  * @author Mathieu Duplouy <mathieu.duplouy@gmail.com>
  */
-abstract class EntityAbstract
+abstract class EntityAbstract implements EntityInterface
 {
     /**
      * Application instance
      * @var Application
      */
     protected $app;
+
+    /**
+     * Resource instance
+     * @var \Cops\Model\ResourceAbstract
+     */
+    protected $resource;
 
     /**
      * Constructor
@@ -33,20 +40,20 @@ abstract class EntityAbstract
      */
     public function __construct(BaseApplication $app, array $dataArray = array())
     {
-        $className = get_called_class();
-        $object = $this;
-        $app['resource.'.$className] = $app->share(function($app) use($className, $object) {
-            $resourceClassName = sprintf('%s\\Resource', $className);
-            return new $resourceClassName($app, $object);
-        });
-
         $this->app = $app;
+
+        if (is_null($this->resource)) {
+            $className = get_called_class();
+            $resourceClassName = sprintf('%s\\Resource', $className);
+            $this->resource = new $resourceClassName($app, $this);
+        }
 
         return $this->setData($dataArray);
     }
 
     /**
      * Set/Get attribute wrapper
+     * @todo Remove this and code any needed setter / getter
      *
      * @param   string $method
      * @param   array $args
@@ -66,8 +73,7 @@ abstract class EntityAbstract
                 }
 
             case 'set' :
-                $this->$propKey = $args[0];
-                return $this;
+                return $this->setData(array($propKey => $args[0]));
         }
         throw new \Exception('Invalid method name : '.get_called_class().'::'.$method);
     }
@@ -83,7 +89,10 @@ abstract class EntityAbstract
     {
         foreach ($dataArray as $prop => $value) {
             $prop = $this->getPropertyName($prop);
-            if (property_exists($this, $prop)) {
+            $setterName =  'set'.ucfirst($prop);
+            if (method_exists($this, $setterName)) {
+                $this->{$setterName}($value);
+            } elseif (property_exists($this, $prop)) {
                 $this->$prop = $value;
             }
         }
@@ -97,7 +106,7 @@ abstract class EntityAbstract
      */
     public function getResource()
     {
-        return $this->app['resource.'.get_called_class()];
+        return $this->resource;
     }
 
     /**
@@ -127,16 +136,6 @@ abstract class EntityAbstract
     }
 
     /**
-     * Config short hand getter
-     *
-     * @return \Cops\Model\Config
-     */
-    public function getConfig()
-    {
-        return $this->app['config'];
-    }
-
-    /**
      * Get the data key from a "flat" property name
      *
      * @param string $prop
@@ -163,7 +162,6 @@ abstract class EntityAbstract
      */
     public function __clone()
     {
-        $this->modelInstance = array();
-        $this->resource = null;
+        $this->resource->setEntity($this);
     }
 }

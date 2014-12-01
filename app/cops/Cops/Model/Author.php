@@ -63,12 +63,9 @@ class Author extends EntityAbstract
      */
     public function getSort()
     {
-        if ($this->sort === null && $this->name !== null)
-        {
-            $app = self::getApp();
+        if ($this->sort === null && $this->name !== null) {
             $this->sort = $this->app['model.calibre']->getAuthorSortName($this->name);
         }
-
         return $this->sort;
     }
 
@@ -155,8 +152,9 @@ class Author extends EntityAbstract
     public function __clone()
     {
         parent::__clone();
-        $this->id   = null;
-        $this->name = null;
-        $this->sort = null;
+        $this->id        = null;
+        $this->name      = null;
+        $this->sort      = null;
+        $this->bookCount = 0;
     }
 }

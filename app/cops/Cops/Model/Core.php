@@ -10,20 +10,18 @@
 namespace Cops\Model;
 
 use Cops\Model\CoreInterface;
-
 use Cops\Provider\MobileDetectServiceProvider;
 use Cops\Provider\UrlGeneratorServiceProvider;
 use Cops\Provider\ImageProcessorServiceProvider;
 use Cops\Provider\TranslationServiceProvider;
-
 use Silex\Provider\DoctrineServiceProvider;
 use Silex\Provider\SecurityServiceProvider;
 use Silex\Provider\SessionServiceProvider;
 use Silex\Provider\TwigServiceProvider;
-
+use Silex\Provider\FormServiceProvider;
+use Silex\Provider\ValidatorServiceProvider;
 use Cops\EventListener\LocaleListener;
-use Silex\Application as BaseApplication;
-
+use Silex\Application;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
@@ -43,49 +41,76 @@ class Core
 
     /**
      * App instance
-     * @var \Silex\Application
+     * @var Application
      */
     private static $app;
 
     /**
      * Constructor
      *
-     * @param \Silex\Application $app
+     * @param Application $app
      */
-    public function __construct(BaseApplication $app)
+    public function __construct(Application $app)
     {
         $this->registerServices($app);
 
         $app->get('/', function () use ($app) {
             // redirect to /default_lang/
             $redirect = $app['url_generator']->generate('homepage', array(
-                '_locale' => $app['config']->getValue('default_lang')
+                '_locale'  => $app['config']->getValue('default_lang'),
+                'database' => $app['config']->getValue('default_database_key'),
             ));
             return $app->redirect($redirect, 301);
         });
 
-        // Set the mount points for the controllers
-        $app->mount('/',                     new \Cops\Controller\IndexController($app));
-        $app->mount('/book/',                new \Cops\Controller\BookController($app));
-        $app->mount('/serie/',               new \Cops\Controller\SerieController($app));
-        $app->mount('/author/',              new \Cops\Controller\AuthorController($app));
-        $app->mount('/tag/',                 new \Cops\Controller\TagController($app));
-        $app->mount('/search/',              new \Cops\Controller\SearchController($app));
-
-        $app->mount('/inline-edit/',         new \Cops\Controller\InlineEditController($app));
-
+        // Not used yet, but prefix is not needed here
         $app->mount('/login/',               new \Cops\Controller\LoginController($app));
-        $app->mount('/opds/',                new \Cops\Controller\OpdsController($app));
 
+        // Admin related controllers
         $adminPath = $app['config']->getAdminPath();
-        $app->mount($adminPath,              new \Cops\Controller\AdminController($app));
-        $app->mount($adminPath.'/database/', new \Cops\Controller\Admin\DatabaseController($app));
-        $app->mount($adminPath.'/feed/',     new \Cops\Controller\Admin\OpdsFeedController($app));
+        // Keep these up to avoid side effects on admin panel
+        $app->mount($adminPath.'/{_locale}',           new \Cops\Controller\AdminController($app));
+        $app->mount($adminPath.'/{_locale}/database/', new \Cops\Controller\Admin\DatabaseController($app));
+        $app->mount($adminPath.'/{_locale}/users/',    new \Cops\Controller\Admin\UserController($app));
+        $app->mount($adminPath.'/{_locale}/feed/',     new \Cops\Controller\Admin\OpdsFeedController($app));
 
-        // Set default storage dir
-        if (!isset($app['book_storage_dir'])) {
-            $app['book_storage_dir'] = BASE_DIR.$app['config']->getValue('data_dir');
-        }
+        // Set the mount points for the controllers with database prefix
+        $app->mount('{database}/{_locale}/',            new \Cops\Controller\IndexController($app));
+
+        $app->mount(
+            '{database}/{_locale}/book/',
+            new \Cops\Controller\BookController($app)
+        );
+
+        $app->mount(
+            '{database}/{_locale}/serie/',
+            new \Cops\Controller\SerieController($app)
+        );
+
+        $app->mount(
+            '{database}/{_locale}/author/',
+            new \Cops\Controller\AuthorController($app)
+        );
+
+        $app->mount(
+            '{database}/{_locale}/tag/',
+            new \Cops\Controller\TagController($app)
+        );
+
+        $app->mount(
+            '{database}/{_locale}/search/',
+            new \Cops\Controller\SearchController($app)
+        );
+
+        $app->mount(
+            '{database}/{_locale}/inline-edit/',
+            new \Cops\Controller\InlineEditController($app)
+        );
+
+        $app->mount(
+            '{database}/{_locale}/opds/',
+            new \Cops\Controller\OpdsController($app)
+        );
 
         $app['core'] = $this;
 
@@ -114,6 +139,8 @@ class Core
                     'cache' => realpath(BASE_DIR . 'cache'),
                 )
             ))
+            ->register(new FormServiceProvider())
+            ->register(new ValidatorServiceProvider())
             // Translator
             ->register(new TranslationServiceProvider(array(
                 'default' => $app['config']->getValue('default_lang')
@@ -127,7 +154,7 @@ class Core
         $app['translator'] = $app->share($app->extend('translator', function($translator) {
             $translator->addLoader('yaml', new YamlFileLoader());
 
-            foreach (array('messages', 'admin') as $domain) {
+            foreach (array('messages', 'admin', 'validators') as $domain) {
                 $translator->addResource('yaml', BASE_DIR.'locales/fr/'.$domain.'.yml', 'fr', $domain);
                 $translator->addResource('yaml', BASE_DIR.'locales/en/'.$domain.'.yml', 'en', $domain);
             }
@@ -135,26 +162,76 @@ class Core
             return $translator;
         }));
 
-       // Register doctrine DBAL service
-        $app->register(new DoctrineServiceProvider(), array(
-            'db.options' => array(
-                'driver'        => 'pdo_sqlite',
-                'path'          => BASE_DIR . $app['config']->getValue('data_dir') . '/metadata.db',
-                'driverOptions' => Calibre::getDBInternalFunctions(),
-            ),
-        ));
-
         // Remove any file marked as "to be deleted"
         $app->finish(function (Request $request, Response $response) use ($app) {
-            if (isset($app['delete_file']) && php_sapi_name() != 'cli') {
+            if (isset($app['delete_file']) && PHP_SAPI != 'cli') {
                 unlink($app['delete_file']);
             }
         });
 
         $this
+            ->registerDatabaseService($app)     // Load databases
+            ->registerModels($app)              // Register models in DIC
             ->registerSecurityService($app)     // Security setup
-            ->registerConsoleCommands($app)     // Console commands
-            ->registerModels($app);             // Register models in DIC
+            ->registerConsoleCommands($app);    // Console commands
+    }
+
+    /**
+     * Register database service and try to load any defined database
+     *
+     * @param  Application $app
+     *
+     * @return $this
+     */
+    private function registerDatabaseService(Application $app)
+    {
+        $options = array();
+        foreach ($app['config']->getValue('data_dir') as $key => $path) {
+
+            $options[$key] = array(
+                'driver' => 'pdo_sqlite',
+                'path' =>  $app['config']->getDatabasePath($key) . '/metadata.db',
+                'driverOptions' => Calibre::getDBInternalFunctions(),
+            );
+        }
+
+        // Always add silexcops for internal storage
+        $options['silexCops'] = array(
+            'driver' => 'pdo_sqlite',
+            'path' => $app['config']->getInternalDatabasePath(),
+        );
+
+        // Register doctrine DBAL service
+        $app->register(new DoctrineServiceProvider(), array(
+            'dbs.options' => $options
+        ));
+
+        // Set the callback to change database on the fly
+        $app->before(function(Request $request) use($app) {
+            try {
+
+                if (!$dbKey = $request->get('database')) {
+                    $dbKey = $app['config']->getValue('default_database_key');
+                }
+
+                $configuredDatabases = $app['config']->getValue('data_dir');
+                if (!array_key_exists($dbKey, $configuredDatabases)) {
+                    throw new \InvalidArgumentException('Database does not exist');
+                }
+
+                $app['db'] = $app->share($app->extend('db', function($db, $app) use($dbKey) {
+                    return $app['dbs'][$dbKey];
+                }));
+
+                $app['config']->setValue('current_database_key', $dbKey);
+                $app['config']->setValue('current_database_path', $app['config']->getDatabasePath($dbKey));
+
+            } catch (\InvalidArgumentException $e) {
+                $app->abort(404, 'Inexistant database');
+            }
+        });
+
+        return $this;
     }
 
     /**
@@ -166,8 +243,9 @@ class Core
      */
     private function registerSecurityService(Application $app)
     {
-        // password encoding reminder
-        // echo $app['security.encoder.digest']->encodePassword('password', '');
+        $app['provider.user'] = function($app) {
+            return new \Cops\Model\User\Provider($app['model.user']);
+        };
 
         // Register security provider
         $app->register(new SecurityServiceProvider(), array(
@@ -175,20 +253,12 @@ class Core
                 'admin' => array(
                     'pattern' => '^/admin',
                     'http' => true,
-                    'users' => array(
-                        // admin : password
-                        'admin' => array('ROLE_ADMIN', 'BFEQkknI/c+Nd7BaG7AaiyTfUFby/pkMHy3UsYqKqDcmvHoPRX/ame9TnVuOV2GrBH0JK9g4koW+CgTYI9mK+w==')
-                    )
+                    'users' => $app['provider.user'],
                 ),
                 'default' => array(
                     'pattern' => '^.*$',
                     'http' => true,
-                    'users' => array(
-                        // user : password
-                        'user' => array('ROLE_EDIT', 'BFEQkknI/c+Nd7BaG7AaiyTfUFby/pkMHy3UsYqKqDcmvHoPRX/ame9TnVuOV2GrBH0JK9g4koW+CgTYI9mK+w=='),
-                        // admin : password
-                        'admin' => array('ROLE_ADMIN', 'BFEQkknI/c+Nd7BaG7AaiyTfUFby/pkMHy3UsYqKqDcmvHoPRX/ame9TnVuOV2GrBH0JK9g4koW+CgTYI9mK+w==')
-                    )
+                    'users' => $app['provider.user'],
                 ),
             )
         ));
@@ -198,10 +268,12 @@ class Core
             'ROLE_EDIT'  => array('ROLE_USER'),
         );
 
-        $app['security.access_rules'] = array(
-             array('^/../admin',        'ROLE_ADMIN'),
-             array('^/../inline-edit/', 'ROLE_EDIT')
-        );
+        $accessRules = array();
+        foreach($app['config']->getValue('data_dir') as $urlPrefix => $dataPath) {
+            $accessRules[] = array('^/../'.$urlPrefix.'/admin',       'ROLE_ADMIN');
+            $accessRules[] = array('^/../'.$urlPrefix.'/inline-edit', 'ROLE_EDIT');
+        }
+        $app['security.access_rules'] = $accessRules;
 
         return $this;
     }
@@ -218,11 +290,14 @@ class Core
         // Register console
         $app->register(new \LExpress\Silex\ConsoleServiceProvider(), array(
             'console.name'    => 'SilexCops',
-            'console.version' => '0.0.5',
+            'console.version' => '1.0',
         ));
 
         $app['command.cache-warmup'] = $app->share(function ($app) {
             return new \Cops\Command\GenerateThumbnails('generate:thumbnails', $app);
+        });
+        $app['command.init-database'] = $app->share(function ($app) {
+            return new \Cops\Command\InitDatabase('generate:thumbnails', $app);
         });
 
         return $this;
@@ -258,10 +333,17 @@ class Core
         $app['model.bookfile'] = function($app) {
             return new \Cops\Model\BookFile($app);
         };
+        $app['model.user'] = function($app) {
+            return new \Cops\Model\User($app);
+        };
          // Calibre internal routines (author_sort etc..)
         $app['model.calibre'] = $app->share(function ($app) {
             return new \Cops\Model\Calibre($app);
         });
+        // Form class
+        $app['form.type.user'] = function($app) {
+            return new \Cops\Form\Type\UserType;
+        };
 
         // Factories
         $app['factory.bookfile'] = $app->share(function($app) {
@@ -277,15 +359,5 @@ class Core
             return new \Cops\Model\ImageProcessor\ImageProcessorFactory($app);
         });
         return $this;
-    }
-
-    /**
-     * App getter
-     *
-     * @return \Silex\Application
-     */
-    public static function getApp()
-    {
-        return self::$app;
     }
 }

@@ -66,25 +66,26 @@ abstract class ResourceAbstract
     }
 
     /**
+     * Entity model setter
+     *
+     * @param  EntityAbstract $entity
+     *
+     * @return ResourceAbstract
+     */
+    public function setEntity(EntityAbstract $entity)
+    {
+        $this->entity = $entity;
+        return $this;
+    }
+
+    /**
      * Get the DB connection instance
      *
      * @return Doctrine\DBAL\Connection
      */
-    public function getConnection()
+    protected function getConnection()
     {
         return $this->app['db'];
-    }
-
-    /**
-     * Base QB select getter
-     *
-     * @deprecated
-     *
-     * @return Doctrine\DBAL\Query\QueryBuilder
-     */
-    protected function getBaseSelect()
-    {
-        return $this->getQueryBuilder();
     }
 
     /**

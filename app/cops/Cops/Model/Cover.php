@@ -95,8 +95,8 @@ class Cover extends EntityAbstract
         $this->bookId     = $book->getId();
 
         if ($book->hasCover()) {
-            $this->coverFile = sprintf($this->storageDir.'%s'.DS.'%s'.DS.'cover.jpg',
-                $this->app['config']->getValue('data_dir'),
+            $this->coverFile = sprintf('%s'.DS.'%s'.DS.'cover.jpg',
+                $this->app['config']->getDatabasePath(),
                 $this->bookPath
             );
         }
@@ -120,7 +120,8 @@ class Cover extends EntityAbstract
         $this->setSize($width, $height);
 
         $this->thumbnailPath = sprintf(
-            DS.'assets'.DS.'books'.DS.'%d'.DS.'%dx%d'.DS.'%d.jpg',
+            DS.'assets'.DS.'books'.DS.'%s'.DS.'%d'.DS.'%dx%d'.DS.'%d.jpg',
+            $this->app['config']->getValue('current_database_key'),
             substr($this->bookId, -1),
             $this->getWidth(),
             $this->getHeight(),
@@ -148,9 +149,7 @@ class Cover extends EntityAbstract
             mkdir(dirname($this->thumbnailFile), 0777, true);
         }
 
-        $app = self::getApp();
-
-        $app['factory.image']
+        $this->app['factory.image']
             ->getInstance($this->app['config']->getValue('image_processor'))
             ->setWidth($this->getWidth())
             ->setHeight($this->getHeight())

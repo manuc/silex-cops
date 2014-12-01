@@ -10,6 +10,7 @@
 namespace Cops\Model;
 
 use Cops\Model\EntityAbstract;
+use Silex\Application as BaseApplication;
 use Cops\Model\Book;
 use Cops\Model\Book\Collection as BookCollection;
 
@@ -21,27 +22,66 @@ use Cops\Model\Book\Collection as BookCollection;
 class BookFile extends EntityAbstract
 {
     /**
-     * Get book files by serie ID
-     *
-     * @param int $serieId
-     *
-     * @return \Cops\Model\BookFile\Collection
+     * Bookfile ID
+     * @var int
      */
-    public function getCollectionBySerieId($serieId)
-    {
-        return $this->getResource()->loadBySerieId($serieId, $this);
-    }
+    protected $id;
 
     /**
-     * Get book files by author ID
-     *
-     * @param int $authorId
-     *
-     * @return \Cops\Model\BookFile\Collection
+     * Book ID
+     * @var int
      */
-    public function getCollectionByAuthorId($authorId)
+    protected $bookId;
+
+    /**
+     * Bookfile format
+     *
+     * @var string
+     */
+    protected $format;
+
+    /**
+     * File size in bytes
+     *
+     * @var int
+     */
+    protected $uncompressedSize = 0;
+
+    /**
+     * File name without extension
+     *
+     * @var string
+     */
+    protected $name;
+
+    /**
+     * Bookfile directory
+     *
+     * @var string
+     */
+    protected $directory;
+
+    /**
+     * Storage directory
+     *
+     * @var string
+     */
+    protected $storageDir;
+
+    /**
+     * Constructor
+     *
+     * @param Silex\Application $app
+     * @param array             $dataArray
+     */
+    public function __construct(BaseApplication $app, array $dataArray = array())
     {
-        return $this->getResource()->loadByAuthorId($authorId, $this);
+        $resourceClassName = sprintf('%s\\Resource', __CLASS__);
+        $this->resource = new $resourceClassName($app, $this);
+
+        $this->storageDir = $app['config']->getDatabasePath();
+
+        return parent::__construct($app, $dataArray);
     }
 
     /**
@@ -61,11 +101,12 @@ class BookFile extends EntityAbstract
      */
     public function __clone()
     {
+        parent::__clone();
+        $this->id               = null;
+        $this->bookId           = null;
         $this->format           = null;
         $this->uncompressedSize = 0;
         $this->name             = null;
         $this->directory        = null;
-
-        parent::__clone();
     }
 }

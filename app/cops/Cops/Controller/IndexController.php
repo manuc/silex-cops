@@ -66,7 +66,8 @@ class IndexController implements \Silex\ControllerProviderInterface
     public function connect(\Silex\Application $app)
     {
         $controller = $app['controllers_factory'];
-        $controller->match("/", get_called_class().'::indexAction')
+        $controller->match("/", __CLASS__.'::indexAction')
+            ->value('database', 'default')
             ->bind('homepage');
         return $controller;
     }
@@ -142,7 +143,7 @@ class IndexController implements \Silex\ControllerProviderInterface
             ->getCollection()
             ->setFirstResult(0)
             ->setMaxResults($app['config']->getValue('homepage_tags'))
-            ->getAll();
+            ->getAllWithBookCount();
         $this->nbTags = $this->tags->getResource()->getTotalRows();
     }
 }

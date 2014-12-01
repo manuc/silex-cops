@@ -9,6 +9,8 @@
  */
 namespace Cops\Model;
 
+use Cops\Model\Utils;
+
 /**
  * Simple configuration class with hardcoded default values and override by ini file
  *
@@ -21,7 +23,7 @@ class Config
      *
      * @var array
      */
-    private $_configValues = array(
+    private $configValues = array(
         // common
         'last_added'              => 10,
 
@@ -31,7 +33,8 @@ class Config
 
         // path
         'public_dir'              => 'web',
-        'data_dir'                => 'data',
+        'data_dir'                => array('data'),
+        'internal_db'             => 'data/silexCops',
 
         // email
         'sender'                  => 'php',
@@ -68,13 +71,31 @@ class Config
      * Constructor
      *
      * @param string $configFilePath
+     * @param Utils  $stringUtils
      */
-    public function __construct($configFilePath)
+    public function __construct($configFilePath, Utils $stringUtils)
     {
-         $confValues = parse_ini_file($configFilePath, false);
-         if (is_array($confValues)) {
-            $this->_configValues = array_merge($this->_configValues, $confValues);
-         }
+        $confValues = parse_ini_file($configFilePath, false);
+        if (is_array($confValues)) {
+            $this->configValues = array_merge($this->configValues, $confValues);
+        }
+
+        if (!is_array($this->configValues['data_dir'])) {
+            $this->configValues['data_dir'] = array('default' => $this->configValues['data_dir']);
+        }
+
+        // Sanitize db key to use it in url
+        $databases = array();
+        foreach ($this->configValues['data_dir'] as $key => $path) {
+            $sanitizedKey = $stringUtils->removeAccents($key);
+            $sanitizedKey = preg_replace('/[^\w]/', '-', $sanitizedKey);
+            $sanitizedKey = preg_replace('/-{2,}/', '-', $sanitizedKey);
+
+            $databases[$sanitizedKey] = $path;
+        }
+        $this->configValues['data_dir'] = $databases;
+
+        $this->configValues['default_database_key'] = key($this->configValues['data_dir']);
     }
 
     /**
@@ -83,16 +104,59 @@ class Config
      * @param string $confKey
      *
      * @return mixed
+     *
+     * @throws \InvalidArgumentException
      */
     public function getValue($confKey)
     {
-        $confValue = null;
-        if (isset($this->_configValues[$confKey])) {
-            $confValue = $this->_configValues[$confKey];
-        } else {
+        if (!array_key_exists($confKey, $this->configValues)) {
             throw new \InvalidArgumentException(sprintf("Config value %s doest not exist", $confKey));
         }
-        return $confValue;
+
+        return $this->configValues[$confKey];
+    }
+
+    /**
+     * Get database path
+     *
+     * @param  string $dbKey Database key
+     *
+     * @return string
+     */
+    public function getDatabasePath($dbKey = 'default')
+    {
+        if ($dbKey == 'default') {
+            $dbKey = $this->configValues['current_database_key'];
+        }
+
+        return $this->preprendBaseDir($this->configValues['data_dir'][$dbKey]);
+    }
+
+    /**
+     * Get internal database path
+     *
+     * @return string
+     */
+    public function getInternalDatabasePath()
+    {
+        return $this->preprendBaseDir($this->configValues['internal_db']);
+    }
+
+    /**
+     * Prepend base dir to data path if needed
+     *
+     * @param string $path
+     *
+     * @return string
+     */
+    protected function preprendBaseDir($path)
+    {
+        // Check if path is relative or absolute
+        if (strpos($path, DS) !== 0) {
+            $path = BASE_DIR . $path;
+        }
+
+        return $path;
     }
 
     /**
@@ -106,7 +170,7 @@ class Config
      */
     public function setValue($confKey, $confValue)
     {
-        $this->_configValues[$confKey] = $confValue;
+        $this->configValues[$confKey] = $confValue;
         return $this;
     }
 
